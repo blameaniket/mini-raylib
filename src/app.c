@@ -88,7 +88,7 @@ static void default_app_render_2d(App *app) {
     // Render Text Info & FPS
     char fps_buf[64];
     snprintf(fps_buf, sizeof(fps_buf), "FPS: %d (%.2f ms)", get_fps(), get_frame_time() * 1000.0f);
-    draw_text(fps_buf, 25, 25, 16, GREEN);
+    draw_text(fps_buf, 25, 25, 5, GREEN);
 
     draw_text("OpenGL Mini-Raylib App", 25, 45, 16, WHITE);
     draw_text("[Right Drag / Arrows] Orbit Camera", 25, 70, 8, LIGHTGRAY);

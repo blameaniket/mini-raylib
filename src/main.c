@@ -5,7 +5,7 @@ int main() {
         .width = 1200,
         .height = 700,
         .title = "sample opengl app",
-        .target_fps = 60,
+        .target_fps = 120,
         .bg_color = (Color){ 30, 32, 40, 255 }
     });
 

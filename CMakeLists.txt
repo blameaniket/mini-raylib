@@ -26,5 +26,13 @@ find_package(glfw3 REQUIRED)
 target_link_libraries(app PRIVATE
     OpenGL::GL
     glfw
-    m
 )
+
+
+if(WIN32)
+    target_link_libraries(app PRIVATE winmm)
+endif()
+
+if(NOT WIN32)
+    target_link_libraries(app PRIVATE m)
+endif()

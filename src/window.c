@@ -5,6 +5,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #define NOGDI
+    #include <windows.h>
+    #include <timeapi.h>
+    #pragma comment(lib, "winmm.lib")
+
+    // Explicitly request high-performance discrete GPU on hybrid graphics laptops
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+#elif defined(__linux__) || defined(__APPLE__)
+    #include <time.h>
+    #include <unistd.h>
+#endif
+
 #define MAX_KEYS 512
 #define MAX_MOUSE_BUTTONS 8
 
@@ -46,6 +61,7 @@ static WindowContext g_win_ctx = { 0 };
 // Forward declaration of internal renderer frame end hook
 extern void internal_renderer_begin_frame(int width, int height);
 extern void internal_renderer_end_frame(void);
+void internal_window_poll_events(void);
 
 // ----------------------------------------------------------------------------------
 // GLFW Callbacks
@@ -98,6 +114,10 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
  * Initialize glfw window.
  */
 void init_window(int width, int height, const char *title) {
+#if defined(_WIN32)
+    timeBeginPeriod(1);
+#endif
+
     g_win_ctx.width = width;
     g_win_ctx.height = height;
     g_win_ctx.title = title;
@@ -146,8 +166,10 @@ void init_window(int width, int height, const char *title) {
     g_win_ctx.last_frame_time = glfwGetTime();
     g_win_ctx.last_fps_update_time = g_win_ctx.last_frame_time;
     g_win_ctx.current_fps = 60;
+    g_win_ctx.frame_time = 0.016666f;
 
     internal_renderer_begin_frame(width, height);
+    internal_window_poll_events();
 }
 
 bool window_should_close(void) {
@@ -161,6 +183,10 @@ void close_window(void) {
         g_win_ctx.handle = NULL;
     }
     glfwTerminate();
+
+#if defined(_WIN32)
+    timeEndPeriod(1);
+#endif
 }
 
 void set_target_fps(int fps) {
@@ -213,35 +239,56 @@ void internal_window_poll_events(void) {
         g_win_ctx.mouse_pos.y - g_win_ctx.last_mouse_pos.y
     };
     g_win_ctx.last_mouse_pos = g_win_ctx.mouse_pos;
+}
 
-    // Delta Time calculation
+void internal_window_swap_buffers(void) {
+    glfwSwapBuffers(g_win_ctx.handle);
+
+    // Precise Target FPS frame limiter (Raylib-style hybrid sleep + spin-wait)
+    if (g_win_ctx.target_fps > 0) {
+        double current_time = glfwGetTime();
+        double target_time = g_win_ctx.last_frame_time + g_win_ctx.target_frame_duration;
+
+        if (current_time < target_time) {
+            double time_remaining = target_time - current_time;
+
+            // 1. Coarse sleep (leaving ~1.5ms margin for precision spin-wait)
+            if (time_remaining > 0.002) {
+                double sleep_ms = (time_remaining - 0.0015) * 1000.0;
+#if defined(_WIN32)
+                Sleep((DWORD)sleep_ms);
+#elif defined(__linux__) || defined(__APPLE__)
+                struct timespec req;
+                req.tv_sec = (time_t)(sleep_ms / 1000.0);
+                req.tv_nsec = (long)((sleep_ms - (req.tv_sec * 1000.0)) * 1e6);
+                nanosleep(&req, NULL);
+#endif
+            }
+
+            // 2. High-precision busy-wait (spin) for the remaining duration
+            while (glfwGetTime() < target_time) {
+#if defined(_WIN32)
+                YieldProcessor();
+#endif
+            }
+        }
+    }
+
+    // Delta Time calculation for the completed frame
     double now = glfwGetTime();
     g_win_ctx.frame_time = (float)(now - g_win_ctx.last_frame_time);
     g_win_ctx.last_frame_time = now;
 
-    // FPS calculation
+    // FPS calculation updated once per second
     g_win_ctx.frame_counter++;
     if (now - g_win_ctx.last_fps_update_time >= 1.0) {
         g_win_ctx.current_fps = g_win_ctx.frame_counter;
         g_win_ctx.frame_counter = 0;
         g_win_ctx.last_fps_update_time = now;
     }
-}
 
-void internal_window_swap_buffers(void) {
-    glfwSwapBuffers(g_win_ctx.handle);
-
-    // Target FPS framing delay if needed
-    if (g_win_ctx.target_fps > 0) {
-        double elapsed = glfwGetTime() - g_win_ctx.last_frame_time;
-        while (elapsed < g_win_ctx.target_frame_duration) {
-            double wait_time = g_win_ctx.target_frame_duration - elapsed;
-            if (wait_time > 0.001) {
-                glfwWaitEventsTimeout(wait_time * 0.5);
-            }
-            elapsed = glfwGetTime() - g_win_ctx.last_frame_time;
-        }
-    }
+    // Poll events for the next frame
+    internal_window_poll_events();
 }
 
 // ----------------------------------------------------------------------------------

@@ -319,8 +319,6 @@ void internal_renderer_begin_frame(int width, int height) {
 // ----------------------------------------------------------------------------------
 
 void begin_drawing(void) {
-    internal_window_poll_events();
-
     g_batch.render_mode_2d_3d = 0;
     recalculate_matrices();
     glDisable(GL_DEPTH_TEST);
